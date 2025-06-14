@@ -125,12 +125,18 @@ def generate_modded_paths(processed_data, base_path):
     return list(modded_paths)
 
 
-def restore_song_list(file_paths):
-    search = re.compile(r"^#ARCH#(.*)", re.MULTILINE)
+def freeplay_song_list(file_paths, skip_ids: list[int], freeplay: bool):
+    processed_ids = "|".join([str(x // 10).zfill(3) for x in skip_ids])
 
     for file_path in file_paths:
         with open(file_path, 'r+', encoding='utf-8') as file:
-            file_data = re.sub(search, r"\g<1>", file.read())
+            file_data = file.read()
+            if freeplay:
+                file_data = modify_mod_pv(file_data, rf"(?!({processed_ids})\.)\d+")
+                file_data = remove_song(file_data, processed_ids)
+            else:
+                file_data = modify_mod_pv(file_data, processed_ids)
+                file_data = remove_song(file_data, rf"(?!({processed_ids})\.)\d+")
             file.seek(0)
             file.write(file_data)
             file.truncate()
@@ -168,7 +174,7 @@ def modify_mod_pv(pv_db: str, songs: str) -> str:
 
 
 def remove_song(pv_db: str, songs: str) -> str:
-    return re.sub(rf"^(pv_({songs})\.difficulty\.(?:easy|normal|hard|extreme).length=\d)$", r"#ARCH#\g<1>", pv_db, flags=re.MULTILINE)
+    return re.sub(rf"^(pv_(?!(144|700)\.)({songs})\.difficulty\.(?:easy|normal|hard|extreme).length=\d)$", r"#ARCH#\g<1>", pv_db, flags=re.MULTILINE)
 
 
 def extract_mod_data_to_json() -> list[Any]:
@@ -207,13 +213,13 @@ def extract_mod_data_to_json() -> list[Any]:
 
                         # Process each mod_data block
                         for _ in matches:
-                            mod_data_match = yaml.safe_load(file_content)
-                            mod_data_content = mod_data_match.get("Hatsune Miku Project Diva Mega Mix+", {}).get("megamix_mod_data", '""')
+                            for single_yaml in yaml.safe_load_all(file_content):
+                                mod_data_content = single_yaml.get("Hatsune Miku Project Diva Mega Mix+", {}).get("megamix_mod_data", None)
 
-                            if isinstance(mod_data_content, dict) or not mod_data_content:
-                                continue
+                                if isinstance(mod_data_content, dict) or not mod_data_content:
+                                    continue
 
-                            all_mod_data.append(json.loads(mod_data_content))
+                                all_mod_data.append(json.loads(mod_data_content))
 
     total = sum(len(pack) for packList in all_mod_data for pack in packList.values())
     logger.debug(f"Found {total} songs")
